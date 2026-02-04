@@ -1,0 +1,7 @@
+{
+  "dependencies": {
+    "csv-parser": "^3.2.0",
+    "date-fns": "^4.1.0",
+    "pg": "^8.18.0"
+  }
+}
