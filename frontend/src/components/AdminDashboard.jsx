@@ -14,6 +14,7 @@ import {
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom'; // Logout ke liye zaroori
 
+const API_URL = import.meta.env.VITE_BACKEND_URL || "https://cuu-1.onrender.com";
 const BACKEND_URL = "http://localhost:5050";
 const API_BASE_URL = `${BACKEND_URL}/api/admin`;
 const CU_RED = '#e31e24';
