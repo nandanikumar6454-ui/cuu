@@ -13,73 +13,47 @@ require('dotenv').config();
 faceapi.env.monkeyPatch({ Canvas, Image });
 
 const app = express();
-const PORT = 5050;
 
-// ==================== ENHANCED CORS HANDLING ====================
-const allowedOrigins = [
-    'http://localhost:5173',
-    'http://localhost:3000',
-    'https://cuu-o4lb-o7wd3awqr-sanjat-s-projects.vercel.app',
-    'https://cuims-attendance-system.vercel.app',
-    'https://cuims-frontend.vercel.app'
-];
+// 🛠️ PORT FIX: Render assigns dynamic ports.
+const PORT = process.env.PORT || 5050;
 
-// Handle preflight requests globally
-app.options('*', (req, res) => {
-    const origin = req.headers.origin;
-    console.log('🛫 Preflight request for:', req.method, req.url, 'Origin:', origin);
-    
-    if (origin && allowedOrigins.includes(origin)) {
-        res.header('Access-Control-Allow-Origin', origin);
-    } else {
-        res.header('Access-Control-Allow-Origin', allowedOrigins[0]);
-    }
-    
-    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH, HEAD');
-    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin, Access-Control-Allow-Headers, x-access-token');
-    res.header('Access-Control-Allow-Credentials', 'true');
-    res.header('Access-Control-Max-Age', '86400'); // 24 hours
-    res.status(204).end();
-});
-
-// Main CORS middleware
+// 🛠️ CORS FIX: Add your specific Vercel deployment URL here.
 app.use(cors({
-    origin: function(origin, callback) {
-        // Allow requests with no origin (like mobile apps or curl requests)
-        if (!origin) return callback(null, true);
-        
-        if (allowedOrigins.indexOf(origin) !== -1) {
-            callback(null, true);
-        } else {
-            console.log('❌ Blocked by CORS:', origin);
-            callback(new Error('Not allowed by CORS'));
-        }
-    },
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH', 'HEAD'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin', 'x-access-token'],
-    credentials: true,
-    preflightContinue: false,
-    optionsSuccessStatus: 204
+    origin: [
+        'http://localhost:5173', 
+        'https://cuu-o4lb-bpif4f8nk-sanjat-s-projects.vercel.app', // Aapka specific Vercel URL
+        'https://cuu-o4lb-o7wd3awqr-sanjat-s-projects.vercel.app'  // Aapka doosra Vercel URL
+    ],
+    methods: ['GET', 'POST', 'PUT', 'DELETE'],
+    credentials: true
 }));
 
-// Middleware
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-// 📝 CUSTOM TERMINAL LOGGER: Prints every action for live monitoring
+// 📝 CUSTOM TERMINAL LOGGER
 app.use((req, res, next) => {
     const start = Date.now();
-    const timestamp = new Date().toLocaleTimeString('en-IN', { hour12: true });
-    console.log(`\n[${timestamp}] ${req.method} ${req.originalUrl}`);
-    console.log(`   Origin: ${req.headers.origin || 'No Origin'}`);
-    console.log(`   Headers:`, req.headers);
-    
     res.on('finish', () => {
         const duration = Date.now() - start;
-        console.log(`   ↳ Status: ${res.statusCode} (${duration}ms)`);
+        console.log(`[${new Date().toLocaleTimeString()}] ${req.method} ${req.originalUrl} - ${res.statusCode} (${duration}ms)`);
     });
     next();
 });
+
+// Database Connection with SSL (Required for Neon/Supabase)
+const pool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    ssl: { rejectUnauthorized: false }
+});
+
+pool.connect()
+    .then(() => console.log('✅ PostgreSQL Connected Successfully'))
+    .catch(err => console.error('❌ DB Connection Error:', err.message));
+
+// Serving Static Files
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+app.use('/models', express.static(path.join(__dirname, 'models')));
 
 // Test endpoint to verify CORS
 app.get('/api/cors-test', (req, res) => {
