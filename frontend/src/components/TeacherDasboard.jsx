@@ -17,7 +17,10 @@ import axios from 'axios';
 import Webcam from 'react-webcam';
 import * as faceapi from 'face-api.js';
 
-const BACKEND_URL = "http://localhost:5050";
+
+
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "https://cuu-1.onrender.com";
+// const BACKEND_URL = "http://localhost:5050";
 const CU_RED = '#e31e24';
 const DRAWER_WIDTH = 260;
 
