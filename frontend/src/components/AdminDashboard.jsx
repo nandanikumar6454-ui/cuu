@@ -14,6 +14,11 @@ import {
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom'; // Logout ke liye zaroori
 
+// Usually in a file like src/api/config.js or src/services/api.js
+const API_BASE_URL = "https://cuims-backend.onrender.com"; // Change this from localhost:5050
+
+// OR if you're using environment variables
+const API_BASE_URL = import.meta.env.VITE_API_URL || "https://cuims-backend.onrender.com";
 const API_URL = import.meta.env.VITE_BACKEND_URL || "https://cuu-1.onrender.com";
 const BACKEND_URL = "http://localhost:5050";
 const API_BASE_URL = `${BACKEND_URL}/api/admin`;
