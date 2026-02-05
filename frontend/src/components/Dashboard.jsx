@@ -23,6 +23,9 @@ function Dashboard({ setToken }) {
     setToken('');
   };
 
+  // 🛠️ API URL FIX: Vite environment variable use karein ya default Render URL
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "https://cuu-1.onrender.com";
+  
   // Fetch available classes for the teacher
   const fetchClasses = async () => {
     try {
