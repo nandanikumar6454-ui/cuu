@@ -1,6 +1,6 @@
 const express = require('express');
 const cors = require('cors');
-const { Pool } = require('pg');
+const { Pool } = require('pg');  // Fixed: Only one Pool import
 const multer = require('multer');
 const fs = require('fs').promises;
 const fsSync = require('fs');
@@ -13,74 +13,29 @@ require('dotenv').config();
 faceapi.env.monkeyPatch({ Canvas, Image });
 
 const app = express();
-
-// 🛠️ PORT FIX: Render assigns dynamic ports.
 const PORT = process.env.PORT || 5050;
 
-// 🛠️ CORS FIX: Production-ready CORS configuration
-// backend/server.js Line 20 ke paas
-const allowedOrigins = [
-    'http://localhost:5173',
-    'http://localhost:3000',
-    'https://cuu-o4lb-bpif4f8nk-sanjat-s-projects.vercel.app',
-    'https://cuu-o4lb-o7wd3awqr-sanjat-s-projects.vercel.app',
-    'https://cuu-o4lb-jdvkdussz-sanjat-s-projects.vercel.app',
-    'https://cuims-attendance-system.vercel.app',
-    'https://cuims-frontend.vercel.app'
-];
-
+// Middleware
 app.use(cors({
-    origin: function (origin, callback) {
-        // Allow requests with no origin (like mobile apps or curl)
-        if (!origin) return callback(null, true);
-        if (allowedOrigins.indexOf(origin) !== -1 || origin.endsWith('.vercel.app')) {
-            callback(null, true);
-        } else {
-            callback(new Error('Not allowed by CORS'));
-        }
-    },
-    methods: ['GET', 'POST', 'PUT', 'DELETE'],
-    credentials: true
-}));;
+    origin: ['http://localhost:5173', 'http://localhost:3000', 'https://cuu-o4lb-o7wd3awqr-sanjat-s-projects.vercel.app', 'http://localhost:5174'],
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    credentials: true,
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+}));
 
 // Handle preflight requests
-app.options('*', cors({
-    origin: function(origin, callback) {
-        if (!origin || allowedOrigins.includes(origin)) {
-            callback(null, true);
-        } else {
-            callback(new Error('Not allowed by CORS'));
-        }
-    },
-    credentials: true
-}));
-
-// CORS middleware
-app.use(cors({
-    origin: function(origin, callback) {
-        if (!origin) return callback(null, true); // Allow requests with no origin
-        if (allowedOrigins.includes(origin)) {
-            callback(null, true);
-        } else {
-            console.log('❌ Blocked by CORS:', origin);
-            callback(new Error('Not allowed by CORS'));
-        }
-    },
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin', 'x-access-token'],
-    credentials: true
-}));
+app.options('*', cors());
 
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-// 📝 CUSTOM TERMINAL LOGGER: Production logging
+// 📝 CUSTOM TERMINAL LOGGER: Prints every action for live monitoring
 app.use((req, res, next) => {
     const start = Date.now();
     res.on('finish', () => {
         const duration = Date.now() - start;
         const timestamp = new Date().toLocaleTimeString('en-IN', { hour12: true });
-        console.log(`[${timestamp}] ${req.method} ${req.originalUrl} - ${res.statusCode} (${duration}ms) Origin: ${req.headers.origin || 'None'}`);
+        console.log(`[${timestamp}] ${req.method} ${req.originalUrl} - ${res.statusCode} (${duration}ms)`);
     });
     next();
 });
@@ -88,18 +43,18 @@ app.use((req, res, next) => {
 // Static Folder for Images
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-// Database Connection with SSL (Required for Render/Production)
-const { Pool } = require('pg');
-
 // Database Connection
-const pool = new Pool({
-    connectionString: process.env.DATABASE_URL,
-    ssl: {
-        rejectUnauthorized: false
-    }
-});
+let pool;
+try {
+    pool = new Pool({
+        connectionString: process.env.DATABASE_URL,
+        ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
+    });
+} catch (error) {
+    console.error('❌ Database connection failed:', error.message);
+    process.exit(1);
+}
 
-// Initialize Database Schema
 const initDB = async () => {
     try {
         await pool.query(`
@@ -139,24 +94,22 @@ const initDB = async () => {
             );
         `);
         
-        console.log('✅ Database Schema Verified');
+        console.log('✅ CUIMS Database Schema Verified');
     } catch (err) {
         console.error('❌ Schema Error:', err.message);
     }
 };
 
-// Connect to Database
-pool.connect()
-    .then(() => {
-        console.log('✅ PostgreSQL Connected Successfully');
-        initDB();
-    })
-    .catch(err => {
-        console.error('❌ DB Connection Error:', err.message);
+pool.connect((err) => {
+    if (err) {
+        console.error('❌ DB Connection Error:', err.stack);
         process.exit(1);
-    });
+    } else { 
+        console.log('✅ PostgreSQL Connected'); 
+        initDB(); 
+    }
+});
 
-// File Upload Configuration
 const upload = multer({ 
     dest: 'uploads/',
     limits: {
@@ -183,6 +136,7 @@ const loadModels = async () => {
         console.error('Download from: https://github.com/justadudewhohacks/face-api.js#models');
     }
 };
+
 loadModels();
 
 const authenticateToken = (req, res, next) => {
@@ -268,7 +222,7 @@ app.post('/api/admin/enroll-with-face', authenticateToken, upload.single('image'
     }
 });
 
-// 2. ENHANCED: Attendance Group Sync (AI)
+// 2. ENHANCED: Attendance Group Sync (AI) with better error handling
 app.post('/api/attendance/group-recognition', authenticateToken, upload.single('image'), async (req, res) => {
     if (!req.file) {
         return res.status(400).json({ 
@@ -450,7 +404,7 @@ app.post('/api/attendance/group-recognition', authenticateToken, upload.single('
     }
 });
 
-// 3. MANUAL ATTENDANCE UPDATE
+// 3. MANUAL ATTENDANCE UPDATE (for real-time and manual fixes)
 app.post('/api/attendance/manual-update', async (req, res) => {
     const { uid, date, subject, slot, status } = req.body;
     
@@ -523,18 +477,13 @@ app.post('/api/attendance/manual-update', async (req, res) => {
     }
 });
 
-// 4. GET STUDENTS BY SECTION (Production-ready with error handling)
-app.get('/api/admin/students', async (req, res) => {
+// 4. GET STUDENTS BY SECTION
+app.get('/api/admin/students', authenticateToken, async (req, res) => {
     try {
         const { section } = req.query;
         
-        console.log('📥 Request to get students for section:', section);
-        
         if (!section) {
-            return res.status(400).json({ 
-                success: false, 
-                message: 'Section parameter is required' 
-            });
+            return res.status(400).json({ error: 'Section parameter is required' });
         }
         
         const result = await pool.query(
@@ -545,28 +494,17 @@ app.get('/api/admin/students', async (req, res) => {
             [section]
         );
         
-        console.log(`✅ Found ${result.rowCount} students for section: ${section}`);
-        
         // Aggressive no-cache headers
         res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
         res.setHeader('Pragma', 'no-cache');
         res.setHeader('Expires', '0');
         res.setHeader('Surrogate-Control', 'no-store');
         
-        res.json({
-            success: true,
-            count: result.rowCount,
-            section: section,
-            students: result.rows
-        });
+        res.json(result.rows);
         
     } catch (err) {
         console.error('❌ Students fetch error:', err);
-        res.status(500).json({ 
-            success: false,
-            error: err.message,
-            message: 'Failed to fetch students'
-        });
+        res.status(500).json({ error: err.message });
     }
 });
 
@@ -602,22 +540,11 @@ app.get('/api/admin/attendance-report', authenticateToken, async (req, res) => {
         res.setHeader('Pragma', 'no-cache');
         res.setHeader('Expires', '0');
         
-        res.json({
-            success: true,
-            count: result.rowCount,
-            section: section,
-            subject: subject,
-            slot: slot,
-            date: targetDate,
-            students: result.rows
-        });
+        res.json(result.rows);
         
     } catch (err) {
         console.error("❌ Report Error:", err.message);
-        res.status(500).json({ 
-            success: false,
-            error: err.message 
-        });
+        res.status(500).json({ error: err.message });
     }
 });
 
@@ -671,16 +598,11 @@ app.get('/api/admin/all-descriptors', async (req, res) => {
         
         console.log(`✅ Returning ${validDescriptors.length} valid descriptors`);
         
-        res.json({
-            success: true,
-            count: validDescriptors.length,
-            descriptors: validDescriptors
-        });
+        res.json(validDescriptors);
         
     } catch (err) {
         console.error('❌ Error loading descriptors:', err);
         res.status(500).json({ 
-            success: false,
             error: err.message,
             message: 'Failed to load face descriptors'
         });
@@ -707,17 +629,10 @@ app.get('/api/admin/unknown-faces', authenticateToken, async (req, res) => {
         
         const result = await pool.query(query, params);
         
-        res.json({
-            success: true,
-            count: result.rowCount,
-            unknownFaces: result.rows
-        });
+        res.json(result.rows);
         
     } catch (err) {
-        res.status(500).json({ 
-            success: false,
-            error: err.message 
-        });
+        res.status(500).json({ error: err.message });
     }
 });
 
@@ -726,10 +641,7 @@ app.delete('/api/admin/student/:uid', async (req, res) => {
     const { uid } = req.params;
     
     if (!uid) {
-        return res.status(400).json({ 
-            success: false,
-            message: "UID is required" 
-        });
+        return res.status(400).json({ message: "UID is required" });
     }
     
     try {
@@ -774,7 +686,7 @@ app.delete('/api/admin/student/:uid', async (req, res) => {
     }
 });
 
-// 9. HEALTH CHECK & SYSTEM STATUS (Production-ready)
+// 9. HEALTH CHECK & SYSTEM STATUS
 app.get('/api/health', async (req, res) => {
     try {
         // Check database connection
@@ -791,26 +703,17 @@ app.get('/api/health', async (req, res) => {
         );
         
         res.json({
-            success: true,
             status: 'healthy',
             timestamp: new Date().toISOString(),
-            environment: process.env.NODE_ENV || 'development',
             database: 'connected',
             ai_models: modelsExist ? 'loaded' : 'missing',
             students: {
                 total: parseInt(studentsRes.rows[0].count),
                 with_face: parseInt(studentsWithFaceRes.rows[0].count)
-            },
-            server: {
-                port: PORT,
-                uptime: process.uptime(),
-                memory: process.memoryUsage()
             }
         });
     } catch (err) {
-        console.error('❌ Health check failed:', err);
         res.status(500).json({
-            success: false,
             status: 'unhealthy',
             timestamp: new Date().toISOString(),
             error: err.message
@@ -859,51 +762,60 @@ app.get('/api/admin/fix-empty-embeddings', async (req, res) => {
     }
 });
 
-// 11. TEST ENDPOINT for frontend connection
-app.get('/api/test-connection', (req, res) => {
-    res.json({
-        success: true,
-        message: 'Backend server is running!',
-        timestamp: new Date().toISOString(),
-        frontend_url: req.headers.origin || 'Unknown',
-        server_url: `https://cuims-backend.onrender.com`
-    });
+// 11. TEST DESCRIPTORS ENDPOINT
+app.get('/api/admin/test-descriptors', async (req, res) => {
+    try {
+        const result = await pool.query(
+            `SELECT uid, name, face_ready, 
+                    face_embedding IS NULL as is_null, 
+                    face_embedding = '' as is_empty,
+                    LENGTH(face_embedding) as length
+             FROM students
+             ORDER BY uid`
+        );
+        
+        console.log('📊 Database Check Results:');
+        result.rows.forEach((row, index) => {
+            console.log(`${index + 1}. ${row.uid} - ${row.name} - ` +
+                       `Face Ready: ${row.face_ready} - ` +
+                       `Is Null: ${row.is_null} - ` +
+                       `Is Empty: ${row.is_empty} - ` +
+                       `Length: ${row.length}`);
+        });
+        
+        res.json({
+            totalStudents: result.rowCount,
+            studentsWithFaceData: result.rows.filter(r => r.face_ready && r.length > 0).length,
+            students: result.rows.map(r => ({
+                uid: r.uid,
+                name: r.name,
+                face_ready: r.face_ready,
+                has_embedding: r.length > 0
+            }))
+        });
+        
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
-// 12. REAL-TIME FACE MATCHING WITH DEDUPLICATION
-app.post('/api/attendance/real-time-face-match', upload.single('image'), async (req, res) => {
-    if (!req.file) {
-        return res.status(400).json({ 
-            success: false, 
-            message: "No image file uploaded." 
-        });
-    }
-    
+// 12. REAL-TIME FACE MATCH ENDPOINT (for live camera)
+app.post('/api/attendance/real-time-match', authenticateToken, async (req, res) => {
     try {
-        const { section, subject = 'Default', slot = 'Default' } = req.body;
+        const { descriptor, section } = req.body;
         
-        if (!section) {
+        if (!descriptor || !section) {
             return res.status(400).json({ 
                 success: false, 
-                message: "Section is required." 
+                message: 'Descriptor and section are required' 
             });
         }
         
-        console.log(`🎯 Processing real-time face match for section: ${section}`);
+        const faceDescriptor = new Float32Array(descriptor);
         
-        // Load image
-        const img = await loadImage(req.file.path);
-        
-        // Detect all faces
-        const detections = await faceapi.detectAllFaces(img)
-            .withFaceLandmarks()
-            .withFaceDescriptors();
-        
-        console.log(`👥 Detected ${detections.length} face(s) in image`);
-        
-        // Get students from the section
+        // Get students from the specific section
         const students = await pool.query(
-            `SELECT id, uid, name, face_embedding, face_ready 
+            `SELECT id, uid, name, face_embedding 
              FROM students 
              WHERE section = $1 AND face_ready = TRUE 
              AND face_embedding IS NOT NULL 
@@ -911,197 +823,45 @@ app.post('/api/attendance/real-time-face-match', upload.single('image'), async (
             [section]
         );
         
-        console.log(`📚 Found ${students.rows.length} registered student(s) in section ${section}`);
+        let bestMatch = null;
+        let bestDistance = Infinity;
         
-        let recognizedFaces = [];
-        let unknownFaces = [];
-        const today = new Date().toISOString().split('T')[0];
-        
-        // Process each detected face
-        for (const [index, detection] of detections.entries()) {
-            let bestMatch = null;
-            let bestDistance = Infinity;
-            let matchedStudent = null;
-            
-            // Try to match with registered students
-            for (let student of students.rows) {
-                try {
-                    if (!student.face_embedding || student.face_embedding.trim() === '') {
-                        continue;
-                    }
-                    
-                    const storedDescriptor = new Float32Array(JSON.parse(student.face_embedding));
-                    const distance = faceapi.euclideanDistance(detection.descriptor, storedDescriptor);
-                    
-                    if (distance < 0.45 && distance < bestDistance) {
-                        bestDistance = distance;
-                        bestMatch = student;
-                        matchedStudent = {
-                            id: student.id,
-                            uid: student.uid,
-                            name: student.name,
-                            distance: distance
-                        };
-                    }
-                } catch (parseError) {
-                    console.warn(`Error parsing descriptor for ${student.uid}:`, parseError.message);
-                    continue;
+        for (let student of students.rows) {
+            try {
+                const storedDescriptor = new Float32Array(JSON.parse(student.face_embedding));
+                const distance = faceapi.euclideanDistance(faceDescriptor, storedDescriptor);
+                
+                if (distance < 0.45 && distance < bestDistance) {
+                    bestDistance = distance;
+                    bestMatch = student;
                 }
-            }
-            
-            if (bestMatch && matchedStudent) {
-                console.log(`✅ Recognized: ${bestMatch.name} (${bestMatch.uid}) - Distance: ${bestDistance.toFixed(4)}`);
-                
-                recognizedFaces.push({
-                    faceIndex: index + 1,
-                    student: matchedStudent,
-                    confidence: detection.detection.score,
-                    distance: bestDistance,
-                    box: detection.detection.box,
-                    timestamp: new Date().toISOString()
-                });
-                
-                // Mark attendance
-                try {
-                    await pool.query(
-                        `INSERT INTO attendance_logs (student_id, status, date, subject, lecture_slot) 
-                         VALUES ($1, 'PRESENT', $2, $3, $4) 
-                         ON CONFLICT (student_id, date, lecture_slot) 
-                         DO UPDATE SET status = 'PRESENT', captured_at = CURRENT_TIMESTAMP`,
-                        [bestMatch.id, today, subject, slot]
-                    );
-                    
-                    console.log(`✅ Marked attendance for ${bestMatch.name} (${bestMatch.uid})`);
-                } catch (dbError) {
-                    console.error(`Database error for ${bestMatch.uid}:`, dbError.message);
-                }
-                
-            } else {
-                // UNKNOWN FACE DETECTED
-                console.log(`⚠️ Unknown face detected #${index + 1} (Score: ${detection.detection.score.toFixed(3)})`);
-                
-                unknownFaces.push({
-                    faceIndex: index + 1,
-                    confidence: detection.detection.score,
-                    box: detection.detection.box,
-                    timestamp: new Date().toISOString()
-                });
-                
-                // Save unknown face log
-                try {
-                    await pool.query(
-                        `INSERT INTO unknown_face_logs (section, timestamp) 
-                         VALUES ($1, CURRENT_TIMESTAMP)`,
-                        [section]
-                    );
-                    
-                    console.log(`📝 Logged unknown face #${index + 1} to database`);
-                } catch (logError) {
-                    console.error('Error logging unknown face:', logError.message);
-                }
+            } catch (parseError) {
+                console.warn(`Skipping student ${student.uid}:`, parseError.message);
+                continue;
             }
         }
         
-        // Clean up temp file
-        await fs.unlink(req.file.path);
-        
-        // Return results with DEDUPLICATION
-        const uniqueRecognized = [];
-        const seenUids = new Set();
-        
-        for (const face of recognizedFaces) {
-            if (!seenUids.has(face.student.uid)) {
-                seenUids.add(face.student.uid);
-                uniqueRecognized.push(face);
-            }
+        if (bestMatch) {
+            res.json({
+                success: true,
+                match: true,
+                student: {
+                    uid: bestMatch.uid,
+                    name: bestMatch.name,
+                    distance: bestDistance
+                },
+                message: `Matched with ${bestMatch.name}`
+            });
+        } else {
+            res.json({
+                success: true,
+                match: false,
+                message: 'No match found'
+            });
         }
-        
-        // For unknown faces, use face position to deduplicate
-        const uniqueUnknown = [];
-        const seenPositions = new Set();
-        
-        for (const face of unknownFaces) {
-            if (face.box) {
-                const positionKey = `${Math.round(face.box.x/50)}_${Math.round(face.box.y/50)}`;
-                if (!seenPositions.has(positionKey)) {
-                    seenPositions.add(positionKey);
-                    uniqueUnknown.push(face);
-                }
-            } else {
-                uniqueUnknown.push(face);
-            }
-        }
-        
-        const result = {
-            success: true,
-            totalFaces: detections.length,
-            recognizedFaces: uniqueRecognized.length,
-            unknownFaces: uniqueUnknown.length,
-            recognized: uniqueRecognized,
-            unknowns: uniqueUnknown,
-            message: `✅ Processed ${detections.length} face(s). ` +
-                    `Recognized ${uniqueRecognized.length} student(s). ` +
-                    `${uniqueUnknown.length} unique unknown face(s) detected.`
-        };
-        
-        console.log(`📊 Final Result: ${uniqueRecognized.length} known, ${uniqueUnknown.length} unknown`);
-        
-        res.json(result);
         
     } catch (err) {
-        console.error('❌ Real-time face match error:', err);
-        
-        // Clean up temp file if exists
-        if (req.file && req.file.path && fsSync.existsSync(req.file.path)) {
-            await fs.unlink(req.file.path).catch(() => {});
-        }
-        
-        res.status(500).json({ 
-            success: false, 
-            error: err.message,
-            message: 'Failed to process face match.'
-        });
-    }
-});
-
-// 13. GET TODAY'S UNKNOWN FACES
-app.get('/api/admin/today-unknown-faces', async (req, res) => {
-    try {
-        const { section } = req.query;
-        
-        const today = new Date().toISOString().split('T')[0];
-        
-        let query = `
-            SELECT 
-                id,
-                section,
-                timestamp,
-                image_path,
-                processed,
-                EXTRACT(HOUR FROM timestamp) as hour,
-                EXTRACT(MINUTE FROM timestamp) as minute
-            FROM unknown_face_logs
-            WHERE DATE(timestamp) = $1
-        `;
-        
-        let params = [today];
-        
-        if (section) {
-            query += ` AND section = $2`;
-            params.push(section);
-        }
-        
-        query += ` ORDER BY timestamp DESC LIMIT 20`;
-        
-        const result = await pool.query(query, params);
-        
-        res.json({
-            success: true,
-            count: result.rowCount,
-            unknownFaces: result.rows
-        });
-        
-    } catch (err) {
+        console.error('❌ Real-time match error:', err);
         res.status(500).json({ 
             success: false, 
             error: err.message 
@@ -1109,8 +869,8 @@ app.get('/api/admin/today-unknown-faces', async (req, res) => {
     }
 });
 
-// 14. DASHBOARD STATS
-app.get('/api/admin/dashboard-stats', async (req, res) => {
+// 13. DASHBOARD STATS
+app.get('/api/admin/dashboard-stats', authenticateToken, async (req, res) => {
     try {
         const { section, date } = req.query;
         const targetDate = date || new Date().toISOString().split('T')[0];
@@ -1139,109 +899,356 @@ app.get('/api/admin/dashboard-stats', async (req, res) => {
         );
         
         res.json({
-            success: true,
             total: parseInt(totalRes.rows[0].count),
             present: parseInt(presentRes.rows[0].count || 0),
             unknown: parseInt(unknownRes.rows[0].count || 0),
-            date: targetDate,
-            section: section
+            date: targetDate
+        });
+        
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// 14. GET LIVE UNKNOWN FACES COUNT
+app.get('/api/admin/live-unknown-count', async (req, res) => {
+    try {
+        const { section } = req.query;
+        
+        if (!section) {
+            return res.status(400).json({ error: 'Section parameter is required' });
+        }
+        
+        // Count unknown faces in last 5 minutes
+        const result = await pool.query(
+            `SELECT COUNT(*) as unknown_count
+             FROM unknown_face_logs 
+             WHERE section = $1 AND timestamp > NOW() - INTERVAL '5 minutes'`,
+            [section]
+        );
+        
+        res.json({
+            success: true,
+            unknown_count: parseInt(result.rows[0].unknown_count || 0),
+            timestamp: new Date().toISOString()
         });
         
     } catch (err) {
         res.status(500).json({ 
-            success: false,
+            success: false, 
             error: err.message 
         });
     }
 });
 
-// 15. GET ALL SECTIONS
-app.get('/api/admin/sections', async (req, res) => {
-    try {
-        const result = await pool.query(
-            'SELECT DISTINCT section FROM students ORDER BY section'
-        );
-        
-        res.json({
-            success: true,
-            sections: result.rows.map(row => row.section)
-        });
-    } catch (err) {
-        res.status(500).json({
-            success: false,
-            error: err.message
-        });
+// 15. REAL-TIME FACE MATCHING WITH DEDUPLICATION - IMPROVED VERSION
+app.post('/api/attendance/real-time-face-match', upload.single('image'), async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ 
+      success: false, 
+      message: "No image file uploaded." 
+    });
+  }
+  
+  try {
+    const { section, subject = 'Default', slot = 'Default' } = req.body;
+    
+    if (!section) {
+      return res.status(400).json({ 
+        success: false, 
+        message: "Section is required." 
+      });
     }
+    
+    console.log(`🎯 Processing real-time face match for section: ${section}`);
+    
+    // Load image
+    const img = await loadImage(req.file.path);
+    
+    // Detect all faces
+    const detections = await faceapi.detectAllFaces(img)
+      .withFaceLandmarks()
+      .withFaceDescriptors();
+    
+    console.log(`👥 Detected ${detections.length} face(s) in image`);
+    
+    // Get students from the section
+    const students = await pool.query(
+      `SELECT id, uid, name, face_embedding, face_ready 
+       FROM students 
+       WHERE section = $1 AND face_ready = TRUE 
+       AND face_embedding IS NOT NULL 
+       AND face_embedding != ''`,
+      [section]
+    );
+    
+    console.log(`📚 Found ${students.rows.length} registered student(s) in section ${section}`);
+    
+    let recognizedFaces = [];
+    let unknownFaces = [];
+    const today = new Date().toISOString().split('T')[0];
+    
+    // Process each detected face
+    for (const [index, detection] of detections.entries()) {
+      let bestMatch = null;
+      let bestDistance = Infinity;
+      let matchedStudent = null;
+      
+      // Try to match with registered students
+      for (let student of students.rows) {
+        try {
+          if (!student.face_embedding || student.face_embedding.trim() === '') {
+            continue;
+          }
+          
+          const storedDescriptor = new Float32Array(JSON.parse(student.face_embedding));
+          const distance = faceapi.euclideanDistance(detection.descriptor, storedDescriptor);
+          
+          if (distance < 0.45 && distance < bestDistance) {
+            bestDistance = distance;
+            bestMatch = student;
+            matchedStudent = {
+              id: student.id,
+              uid: student.uid,
+              name: student.name,
+              distance: distance
+            };
+          }
+        } catch (parseError) {
+          console.warn(`Error parsing descriptor for ${student.uid}:`, parseError.message);
+          continue;
+        }
+      }
+      
+      if (bestMatch && matchedStudent) {
+        console.log(`✅ Recognized: ${bestMatch.name} (${bestMatch.uid}) - Distance: ${bestDistance.toFixed(4)}`);
+        
+        recognizedFaces.push({
+          faceIndex: index + 1,
+          student: matchedStudent,
+          confidence: detection.detection.score,
+          distance: bestDistance,
+          box: detection.detection.box,
+          timestamp: new Date().toISOString()
+        });
+        
+        // Mark attendance
+        try {
+          await pool.query(
+            `INSERT INTO attendance_logs (student_id, status, date, subject, lecture_slot) 
+             VALUES ($1, 'PRESENT', $2, $3, $4) 
+             ON CONFLICT (student_id, date, lecture_slot) 
+             DO UPDATE SET status = 'PRESENT', captured_at = CURRENT_TIMESTAMP`,
+            [bestMatch.id, today, subject, slot]
+          );
+          
+          console.log(`✅ Marked attendance for ${bestMatch.name} (${bestMatch.uid})`);
+        } catch (dbError) {
+          console.error(`Database error for ${bestMatch.uid}:`, dbError.message);
+        }
+        
+      } else {
+        // UNKNOWN FACE DETECTED
+        console.log(`⚠️ Unknown face detected #${index + 1} (Score: ${detection.detection.score.toFixed(3)})`);
+        
+        unknownFaces.push({
+          faceIndex: index + 1,
+          confidence: detection.detection.score,
+          box: detection.detection.box,
+          timestamp: new Date().toISOString()
+        });
+        
+        // Save unknown face log
+        try {
+          await pool.query(
+            `INSERT INTO unknown_face_logs (section, timestamp) 
+             VALUES ($1, CURRENT_TIMESTAMP)`,
+            [section]
+          );
+          
+          console.log(`📝 Logged unknown face #${index + 1} to database`);
+        } catch (logError) {
+          console.error('Error logging unknown face:', logError.message);
+        }
+      }
+    }
+    
+    // Clean up temp file
+    await fs.unlink(req.file.path);
+    
+    // Return results with DEDUPLICATION
+    const uniqueRecognized = [];
+    const seenUids = new Set();
+    
+    for (const face of recognizedFaces) {
+      if (!seenUids.has(face.student.uid)) {
+        seenUids.add(face.student.uid);
+        uniqueRecognized.push(face);
+      }
+    }
+    
+    // For unknown faces, use face position to deduplicate
+    const uniqueUnknown = [];
+    const seenPositions = new Set();
+    
+    for (const face of unknownFaces) {
+      if (face.box) {
+        const positionKey = `${Math.round(face.box.x/50)}_${Math.round(face.box.y/50)}`;
+        if (!seenPositions.has(positionKey)) {
+          seenPositions.add(positionKey);
+          uniqueUnknown.push(face);
+        }
+      } else {
+        uniqueUnknown.push(face);
+      }
+    }
+    
+    const result = {
+      success: true,
+      totalFaces: detections.length,
+      recognizedFaces: uniqueRecognized.length,
+      unknownFaces: uniqueUnknown.length,
+      recognized: uniqueRecognized,
+      unknowns: uniqueUnknown,
+      message: `✅ Processed ${detections.length} face(s). ` +
+              `Recognized ${uniqueRecognized.length} student(s). ` +
+              `${uniqueUnknown.length} unique unknown face(s) detected.`
+    };
+    
+    console.log(`📊 Final Result: ${uniqueRecognized.length} known, ${uniqueUnknown.length} unknown`);
+    
+    res.json(result);
+    
+  } catch (err) {
+    console.error('❌ Real-time face match error:', err);
+    
+    // Clean up temp file if exists
+    if (req.file && req.file.path && fsSync.existsSync(req.file.path)) {
+      await fs.unlink(req.file.path).catch(() => {});
+    }
+    
+    res.status(500).json({ 
+      success: false, 
+      error: err.message,
+      message: 'Failed to process face match.'
+    });
+  }
 });
 
-// 404 Handler for undefined routes
-app.use('*', (req, res) => {
-    res.status(404).json({
-        success: false,
-        message: 'Route not found',
-        path: req.originalUrl
+// 16. GET TODAY'S UNKNOWN FACES
+app.get('/api/admin/today-unknown-faces', async (req, res) => {
+  try {
+    const { section } = req.query;
+    
+    const today = new Date().toISOString().split('T')[0];
+    
+    let query = `
+      SELECT 
+        id,
+        section,
+        timestamp,
+        image_path,
+        processed,
+        EXTRACT(HOUR FROM timestamp) as hour,
+        EXTRACT(MINUTE FROM timestamp) as minute
+      FROM unknown_face_logs
+      WHERE DATE(timestamp) = $1
+    `;
+    
+    let params = [today];
+    
+    if (section) {
+      query += ` AND section = $2`;
+      params.push(section);
+    }
+    
+    query += ` ORDER BY timestamp DESC LIMIT 20`;
+    
+    const result = await pool.query(query, params);
+    
+    res.json({
+      success: true,
+      count: result.rowCount,
+      unknownFaces: result.rows
     });
+    
+  } catch (err) {
+    res.status(500).json({ 
+      success: false, 
+      error: err.message 
+    });
+  }
+});
+
+// 17. ROOT ENDPOINT
+app.get('/', (req, res) => {
+  res.json({
+    message: 'CUIMS Attendance System Backend API',
+    version: '1.0.0',
+    status: 'running',
+    timestamp: new Date().toISOString(),
+    endpoints: {
+      health: '/api/health',
+      enroll: '/api/admin/enroll-with-face',
+      groupRecognition: '/api/attendance/group-recognition',
+      manualUpdate: '/api/attendance/manual-update',
+      students: '/api/admin/students',
+      attendanceReport: '/api/admin/attendance-report',
+      descriptors: '/api/admin/all-descriptors'
+    }
+  });
+});
+
+// 18. CATCH-ALL FOR UNDEFINED ROUTES
+app.use('*', (req, res) => {
+  res.status(404).json({
+    success: false,
+    message: `Route ${req.originalUrl} not found`
+  });
 });
 
 // Error handling middleware
 app.use((err, req, res, next) => {
-    console.error('❌ Server Error:', err.stack);
-    res.status(500).json({
-        success: false,
-        message: 'Internal server error',
-        error: process.env.NODE_ENV === 'development' ? err.message : 'Something went wrong'
-    });
+  console.error('❌ Server Error:', err.stack);
+  res.status(500).json({
+    success: false,
+    message: 'Internal server error',
+    error: process.env.NODE_ENV === 'development' ? err.message : 'Something went wrong'
+  });
 });
 
 // Start Server
-app.listen(PORT, '0.0.0.0', () => {
+app.listen(PORT, () => {
     console.log(`
-╔══════════════════════════════════════════════════════════════════════════╗
-║                    CUIMS ATTENDANCE SYSTEM - PRODUCTION                 ║
-║                         Backend Server Active                           ║
-╚══════════════════════════════════════════════════════════════════════════╝
+╔════════════════════════════════════════════════════════════╗
+║                    CUIMS ATTENDANCE SYSTEM                 ║
+║                    Backend Server Active                   ║
+╚════════════════════════════════════════════════════════════╝
     
-📡 Server running on: http://0.0.0.0:${PORT}
-🌐 CORS Enabled for: ${allowedOrigins.join(', ')}
+📡 Server running on: http://localhost:${PORT}
+📡 Environment: ${process.env.NODE_ENV || 'development'}
 🗄️  Database: PostgreSQL (Connected)
 🤖 AI Engine: ${fsSync.existsSync(path.join(__dirname, 'models')) ? 'Ready' : 'Models Missing'}
-📁 Environment: ${process.env.NODE_ENV || 'development'}
+📁 Uploads: ${path.join(__dirname, 'uploads')}
 
-✅ TEST ENDPOINTS:
-   • GET    /api/health                 - System health check
-   • GET    /api/test-connection        - Test frontend-backend connection
-   • GET    /api/admin/students         - Get students by section
-
-🚀 MAIN ENDPOINTS:
+🚀 Available Endpoints:
+   • GET    /                           - API Info
    • POST   /api/admin/enroll-with-face     - Enroll student with face
    • POST   /api/attendance/group-recognition - Group attendance scan
-   • POST   /api/attendance/real-time-face-match - Real-time face match
    • POST   /api/attendance/manual-update   - Manual attendance update
-
-📊 ADMIN ENDPOINTS:
+   • GET    /api/admin/students             - Get students by section
    • GET    /api/admin/attendance-report    - Get attendance report
-   • GET    /api/admin/dashboard-stats      - Dashboard statistics
-   • GET    /api/admin/sections             - Get all sections
-   • DELETE /api/admin/student/:uid         - Delete student
-
-🔧 UTILITY ENDPOINTS:
    • GET    /api/admin/all-descriptors      - Get all face descriptors
+   • DELETE /api/admin/student/:uid         - Delete student
+   • GET    /api/health                     - System health check
+
+🔧 Utility Endpoints:
    • GET    /api/admin/fix-empty-embeddings - Fix database issues
+   • GET    /api/admin/test-descriptors     - Test descriptors
+   • GET    /api/admin/dashboard-stats      - Dashboard statistics
    • GET    /api/admin/unknown-faces        - Unknown faces report
-   • GET    /api/admin/today-unknown-faces  - Today's unknown faces
+   • GET    /api/admin/live-unknown-count   - Live unknown faces count
 
-⚠️  Production Server Ready!
-    Frontend URL: https://cuu-o4lb-bpif4f8nk-sanjat-s-projects.vercel.app
-    Backend URL: https://cuims-backend.onrender.com
+⚠️  Make sure face-api.js models are in the 'models' directory.
     `);
-});
-
-// Handle uncaught errors
-process.on('uncaughtException', (err) => {
-    console.error('❌ Uncaught Exception:', err);
-    process.exit(1);
-});
-
-process.on('unhandledRejection', (err) => {
-    console.error('❌ Unhandled Rejection:', err);
 });
