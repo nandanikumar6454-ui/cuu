@@ -3,7 +3,7 @@ import {
   Container, Paper, TextField, Button, Typography, 
   Box, Alert, CircularProgress, InputAdornment, IconButton,
   Tab, Tabs, Divider, Zoom, Fade, Chip 
-} from '@mui/material'; // Chip added here to fix the ReferenceError
+} from '@mui/material';
 import { 
   Visibility, VisibilityOff, Email, Lock, Person, 
   School, AdminPanelSettings, HelpOutline 
@@ -12,6 +12,9 @@ import { auth } from '../firebaseConfig';
 import { signInWithEmailAndPassword } from 'firebase/auth';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
+
+// 🛠️ API URL FIX: Hardcoded localhost ko hatakar dynamic URL set kiya
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "https://cuu-1.onrender.com";
 
 function Login({ setToken, setUser }) {
   const [loginType, setLoginType] = useState('student');
@@ -46,13 +49,13 @@ function Login({ setToken, setUser }) {
   };
 
   const handleStudentLogin = async () => {
-    // Validating UID format before sending to backend
     if (!studentUid) {
       setError("Please enter your Student UID.");
       return;
     }
 
-    const response = await axios.post('http://localhost:5000/api/auth/student-login', {
+    // 🛠️ URL UPDATE: Using BACKEND_URL variable
+    const response = await axios.post(`${BACKEND_URL}/api/auth/student-login`, {
       uid: studentUid.toUpperCase(), 
       password: studentPassword
     });
@@ -65,8 +68,8 @@ function Login({ setToken, setUser }) {
     // Firebase Authentication
     const userCredential = await signInWithEmailAndPassword(auth, email, password);
     
-    // Backend Validation and Token retrieval
-    const backendResponse = await axios.post('http://localhost:5000/api/auth/login', {
+    // 🛠️ URL UPDATE: Using BACKEND_URL variable
+    const backendResponse = await axios.post(`${BACKEND_URL}/api/auth/login`, {
       email: email.toLowerCase(),
       password
     });
@@ -103,6 +106,8 @@ function Login({ setToken, setUser }) {
       setError("Access Denied: Invalid credentials for @cuchd.in account.");
     } else if (err.code === 'auth/network-request-failed') {
       setError("Network error. Please check your internet connection.");
+    } else if (err.message === "Network Error") {
+      setError("Cannot connect to CUIMS server. Please check if backend is live.");
     } else {
       setError(err.response?.data?.error || "CUIMS Server Error. Please try again later.");
     }
