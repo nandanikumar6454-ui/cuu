@@ -91,11 +91,9 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 // Database Connection with SSL (Required for Render/Production)
 const { Pool } = require('pg');
 
+// Database Connection
 const pool = new Pool({
-    connectionString: process.env.DATABASE_URL,
-    ssl: {
-        rejectUnauthorized: false 
-    }
+    connectionString: process.env.DATABASE_URL
 });
 
 // Initialize Database Schema
