@@ -18,14 +18,30 @@ const app = express();
 const PORT = process.env.PORT || 5050;
 
 // 🛠️ CORS FIX: Production-ready CORS configuration
+// backend/server.js Line 20 ke paas
 const allowedOrigins = [
     'http://localhost:5173',
     'http://localhost:3000',
     'https://cuu-o4lb-bpif4f8nk-sanjat-s-projects.vercel.app',
     'https://cuu-o4lb-o7wd3awqr-sanjat-s-projects.vercel.app',
+    'https://cuu-o4lb-jdvkdussz-sanjat-s-projects.vercel.app',
     'https://cuims-attendance-system.vercel.app',
     'https://cuims-frontend.vercel.app'
 ];
+
+app.use(cors({
+    origin: function (origin, callback) {
+        // Allow requests with no origin (like mobile apps or curl)
+        if (!origin) return callback(null, true);
+        if (allowedOrigins.indexOf(origin) !== -1 || origin.endsWith('.vercel.app')) {
+            callback(null, true);
+        } else {
+            callback(new Error('Not allowed by CORS'));
+        }
+    },
+    methods: ['GET', 'POST', 'PUT', 'DELETE'],
+    credentials: true
+}));;
 
 // Handle preflight requests
 app.options('*', cors({
