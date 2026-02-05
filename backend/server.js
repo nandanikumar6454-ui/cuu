@@ -46,17 +46,101 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 // Database Connection
 let pool;
 try {
-    pool = new Pool({
-        connectionString: process.env.DATABASE_URL,
-        ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
-    });
+    // Try to use individual environment variables first (Railway style)
+    if (process.env.PGHOST && process.env.PGUSER) {
+        console.log('📊 Using individual PostgreSQL environment variables');
+        pool = new Pool({
+            host: process.env.PGHOST,
+            port: process.env.PGPORT || 5432,
+            user: process.env.PGUSER,
+            password: process.env.PGPASSWORD,
+            database: process.env.PGDATABASE || 'postgres',
+            ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+            max: 20,
+            idleTimeoutMillis: 30000,
+            connectionTimeoutMillis: 2000,
+        });
+    } 
+    // Fallback to DATABASE_URL (Railway's default)
+    else if (process.env.DATABASE_URL) {
+        console.log('📊 Using DATABASE_URL environment variable');
+        pool = new Pool({
+            connectionString: process.env.DATABASE_URL,
+            ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+            max: 20,
+            idleTimeoutMillis: 30000,
+            connectionTimeoutMillis: 2000,
+        });
+    } 
+    // Local development fallback
+    else {
+        console.log('📊 Using local development database configuration');
+        pool = new Pool({
+            host: 'localhost',
+            port: 5432,
+            user: 'postgres',
+            password: 'postgres',
+            database: 'cuims_db',
+            max: 20,
+            idleTimeoutMillis: 30000,
+            connectionTimeoutMillis: 2000,
+        });
+    }
+    
+    console.log('✅ Database configuration loaded');
 } catch (error) {
     console.error('❌ Database connection failed:', error.message);
+    console.error('Available environment variables:', Object.keys(process.env).filter(key => key.includes('PG') || key.includes('DATABASE')));
     process.exit(1);
 }
 
-const initDB = async () => {
+// Test connection immediately
+pool.on('connect', () => {
+    console.log('✅ PostgreSQL Connection Established');
+});
+
+pool.on('error', (err) => {
+    console.error('❌ Unexpected PostgreSQL error:', err);
+    process.exit(-1);
+});
+
+// Test connection function
+const testConnection = async () => {
     try {
+        const client = await pool.connect();
+        console.log('✅ Database connection test successful');
+        const result = await client.query('SELECT version()');
+        console.log('📊 PostgreSQL Version:', result.rows[0].version);
+        client.release();
+        return true;
+    } catch (err) {
+        console.error('❌ Database connection test failed:', err.message);
+        console.error('❌ Error details:', err);
+        
+        // Log available environment variables for debugging
+        console.log('\n🔍 Available environment variables:');
+        Object.keys(process.env).forEach(key => {
+            if (key.includes('PG') || key.includes('DATABASE') || key.includes('POSTGRES')) {
+                // Mask password in logs
+                const value = key.includes('PASSWORD') ? '******' : process.env[key];
+                console.log(`  ${key}=${value}`);
+            }
+        });
+        
+        return false;
+    }
+};
+
+// Initialize database with connection test
+const initDB = async () => {
+    const connected = await testConnection();
+    if (!connected) {
+        console.error('❌ Database initialization aborted - connection failed');
+        return;
+    }
+    
+    try {
+        // Create tables if they don't exist
         await pool.query(`
             CREATE TABLE IF NOT EXISTS students (
                 id SERIAL PRIMARY KEY,
@@ -70,6 +154,8 @@ const initDB = async () => {
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
         `);
+        console.log('✅ Students table verified');
+        
         await pool.query(`
             CREATE TABLE IF NOT EXISTS attendance_logs (
                 id SERIAL PRIMARY KEY,
@@ -82,6 +168,7 @@ const initDB = async () => {
                 CONSTRAINT unique_attendance_per_slot UNIQUE(student_id, date, lecture_slot)
             );
         `);
+        console.log('✅ Attendance logs table verified');
         
         await pool.query(`
             CREATE TABLE IF NOT EXISTS unknown_face_logs (
@@ -93,22 +180,19 @@ const initDB = async () => {
                 face_descriptor TEXT
             );
         `);
+        console.log('✅ Unknown face logs table verified');
         
-        console.log('✅ CUIMS Database Schema Verified');
+        console.log('✅ CUIMS Database Schema Ready');
+        
+        // Count existing students for info
+        const countResult = await pool.query('SELECT COUNT(*) as total FROM students');
+        console.log(`📊 Database has ${countResult.rows[0].total} student(s) registered`);
+        
     } catch (err) {
         console.error('❌ Schema Error:', err.message);
+        console.error('❌ Full error:', err);
     }
 };
-
-pool.connect((err) => {
-    if (err) {
-        console.error('❌ DB Connection Error:', err.stack);
-        process.exit(1);
-    } else { 
-        console.log('✅ PostgreSQL Connected'); 
-        initDB(); 
-    }
-});
 
 const upload = multer({ 
     dest: 'uploads/',
@@ -147,6 +231,41 @@ const authenticateToken = (req, res, next) => {
 };
 
 // ==================== ROUTES ====================
+
+// Debug endpoint to check database connection
+app.get('/api/debug/db', async (req, res) => {
+    try {
+        const result = await pool.query('SELECT version() as version, current_timestamp as time, current_database() as database');
+        
+        res.json({
+            success: true,
+            database: {
+                version: result.rows[0].version,
+                database: result.rows[0].database,
+                timestamp: result.rows[0].time,
+                connection: 'OK'
+            },
+            environment: {
+                node_env: process.env.NODE_ENV,
+                has_pghost: !!process.env.PGHOST,
+                has_pguser: !!process.env.PGUSER,
+                has_database_url: !!process.env.DATABASE_URL,
+                all_env_vars: Object.keys(process.env).filter(key => key.includes('PG') || key.includes('DATABASE'))
+            }
+        });
+    } catch (err) {
+        res.status(500).json({
+            success: false,
+            error: err.message,
+            environment: {
+                pghost: process.env.PGHOST,
+                pguser: process.env.PGUSER,
+                pgdatabase: process.env.PGDATABASE,
+                has_password: !!process.env.PGPASSWORD
+            }
+        });
+    }
+});
 
 // 1. Enrollment (Manual)
 app.post('/api/admin/enroll-with-face', authenticateToken, upload.single('image'), async (req, res) => {
@@ -690,13 +809,13 @@ app.delete('/api/admin/student/:uid', async (req, res) => {
 app.get('/api/health', async (req, res) => {
     try {
         // Check database connection
-        await pool.query('SELECT 1');
+        const dbCheck = await pool.query('SELECT 1');
         
         // Check models directory
         const modelPath = path.join(__dirname, 'models');
         const modelsExist = fsSync.existsSync(modelPath);
         
-        // Count students
+        // Get basic stats
         const studentsRes = await pool.query('SELECT COUNT(*) FROM students');
         const studentsWithFaceRes = await pool.query(
             'SELECT COUNT(*) FROM students WHERE face_ready = TRUE'
@@ -705,18 +824,42 @@ app.get('/api/health', async (req, res) => {
         res.json({
             status: 'healthy',
             timestamp: new Date().toISOString(),
-            database: 'connected',
+            system: {
+                node_version: process.version,
+                platform: process.platform,
+                memory: process.memoryUsage(),
+                uptime: process.uptime()
+            },
+            database: {
+                connected: true,
+                host: process.env.PGHOST || 'localhost',
+                database: process.env.PGDATABASE || 'unknown',
+                user: process.env.PGUSER || 'unknown'
+            },
             ai_models: modelsExist ? 'loaded' : 'missing',
             students: {
                 total: parseInt(studentsRes.rows[0].count),
                 with_face: parseInt(studentsWithFaceRes.rows[0].count)
+            },
+            endpoints: {
+                total: 18,
+                working: true
             }
         });
     } catch (err) {
         res.status(500).json({
             status: 'unhealthy',
             timestamp: new Date().toISOString(),
-            error: err.message
+            database: {
+                connected: false,
+                error: err.message,
+                available_vars: Object.keys(process.env).filter(key => key.includes('PG') || key.includes('DATABASE'))
+            },
+            ai_models: 'unknown',
+            system: {
+                node_version: process.version,
+                platform: process.platform
+            }
         });
     }
 });
@@ -1189,6 +1332,7 @@ app.get('/', (req, res) => {
     timestamp: new Date().toISOString(),
     endpoints: {
       health: '/api/health',
+      debug: '/api/debug/db',
       enroll: '/api/admin/enroll-with-face',
       groupRecognition: '/api/attendance/group-recognition',
       manualUpdate: '/api/attendance/manual-update',
@@ -1217,6 +1361,12 @@ app.use((err, req, res, next) => {
   });
 });
 
+// Call initDB after a short delay to ensure models are loaded
+setTimeout(() => {
+    console.log('🔄 Initializing database...');
+    initDB();
+}, 1000);
+
 // Start Server
 app.listen(PORT, () => {
     console.log(`
@@ -1227,12 +1377,12 @@ app.listen(PORT, () => {
     
 📡 Server running on: http://localhost:${PORT}
 📡 Environment: ${process.env.NODE_ENV || 'development'}
-🗄️  Database: PostgreSQL (Connected)
 🤖 AI Engine: ${fsSync.existsSync(path.join(__dirname, 'models')) ? 'Ready' : 'Models Missing'}
 📁 Uploads: ${path.join(__dirname, 'uploads')}
 
 🚀 Available Endpoints:
    • GET    /                           - API Info
+   • GET    /api/debug/db               - Database Debug Info
    • POST   /api/admin/enroll-with-face     - Enroll student with face
    • POST   /api/attendance/group-recognition - Group attendance scan
    • POST   /api/attendance/manual-update   - Manual attendance update
