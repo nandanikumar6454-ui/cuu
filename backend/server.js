@@ -17,7 +17,7 @@ const PORT = 5050;
 
 // Middleware
 app.use(cors({
-    origin: ['http://localhost:5173', 'http://localhost:3000', 'https://your-project-name.vercel.app'],
+    origin: ['https://cuu-o4lb-bpif4f8nk-sanjat-s-projects.vercel.app', 'http://localhost:5173', 'http://localhost:5000', 'https://your-project-name.vercel.app'],
     methods: ['GET', 'POST', 'PUT', 'DELETE'],
     credentials: true
 }));
