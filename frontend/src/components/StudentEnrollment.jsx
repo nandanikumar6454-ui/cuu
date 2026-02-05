@@ -12,6 +12,7 @@ import { useDropzone } from 'react-dropzone';
 import Webcam from 'react-webcam';
 import axios from 'axios';
 
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "https://cuu-1.onrender.com";
 function StudentEnrollment() {
   const [activeStep, setActiveStep] = useState(0);
   const [loading, setLoading] = useState(false);
