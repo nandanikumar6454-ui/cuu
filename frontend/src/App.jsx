@@ -24,6 +24,7 @@ function App() {
       sessionStorage.clear();
       setToken(''); // Reset state to trigger automatic Navigate to "/"
       setUser({});
+      window.location.href = "/"; // Hard redirect to ensure clean state
     } catch (err) {
       console.error("Sign Out Error:", err);
     }
@@ -33,13 +34,11 @@ function App() {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       if (currentUser) {
         const idToken = await currentUser.getIdToken()
-        setToken(idToken)
-        localStorage.setItem('token', idToken)
         
         let role = 'teacher';
         const email = currentUser.email.toLowerCase();
         
-        // CUIMS Domain-Specific Role Logic
+        // 🛠️ CUIMS Domain-Specific Role Logic
         if (email.includes('admin@cuchd.in')) role = 'admin';
         else if (email.includes('24bca10057@cuchd.in')) role = 'student';
 
@@ -49,7 +48,10 @@ function App() {
           role: role,
           name: email.split('@')[0].toUpperCase()
         };
+
+        setToken(idToken)
         setUser(userData)
+        localStorage.setItem('token', idToken)
         localStorage.setItem('user', JSON.stringify(userData))
       } else {
         setToken('')
@@ -66,14 +68,14 @@ function App() {
   if (loading) return (
     <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', flexDirection: 'column' }}>
       <img src="https://www.cuchd.in/includes/images/cu-logo.png" alt="CU Logo" style={{ height: '80px', marginBottom: '20px' }} />
-      <div className="loading">CUIMS - Securing Access...</div>
+      <div className="loading" style={{ fontWeight: 'bold', color: '#e31e24' }}>CUIMS - Securing Access...</div>
     </div>
   )
 
   // Protected Route Logic Wrapper
   const RoleRoute = ({ children, allowedRoles }) => {
-    if (!token) return <Navigate to="/" />
-    if (!allowedRoles.includes(user.role)) return <Navigate to="/" />
+    if (!token) return <Navigate to="/" replace />
+    if (!allowedRoles.includes(user.role)) return <Navigate to="/" replace />
     return children
   }
 
@@ -84,9 +86,9 @@ function App() {
           {/* Centralized Redirect Logic */}
           <Route path="/" element={
             !token ? <Login setToken={setToken} setUser={setUser} /> : 
-            user.role === 'admin' ? <Navigate to="/admin/dashboard" /> :
-            user.role === 'student' ? <Navigate to="/student/dashboard" /> : 
-            <Navigate to="/teacher/dashboard" />
+            user.role === 'admin' ? <Navigate to="/admin/dashboard" replace /> :
+            user.role === 'student' ? <Navigate to="/student/dashboard" replace /> : 
+            <Navigate to="/teacher/dashboard" replace />
           } />
 
           {/* Admin Routes with handleSignOut */}
@@ -125,7 +127,7 @@ function App() {
           } />
 
           {/* Error Handling */}
-          <Route path="*" element={<Navigate to="/" />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </div>
     </Router>
