@@ -4,8 +4,9 @@ import { Download, EventBusy, Assessment } from '@mui/icons-material';
 import axios from 'axios';
 import * as XLSX from 'xlsx';
 
-// 🛠️ API URL FIX: Vite environment variable use karein ya default Render URL
+// 🛠️ API URL FIX
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "https://cuu-1.onrender.com";
+
 
 function AttendanceReport() {
   const [report, setReport] = useState([]);
