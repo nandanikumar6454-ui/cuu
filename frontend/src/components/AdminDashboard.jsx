@@ -12,21 +12,15 @@ import {
   Warning, ErrorOutline, PhotoCamera, VerifiedUser, Layers, Sync, Logout
 } from '@mui/icons-material';
 import axios from 'axios';
-import { useNavigate } from 'react-router-dom'; // Logout ke liye zaroori
+import { useNavigate } from 'react-router-dom';
 
-// Usually in a file like src/api/config.js or src/services/api.js
-const API_BASE_URL = "https://cuims-backend.onrender.com"; // Change this from localhost:5050
-
-// OR if you're using environment variables
-const API_BASE_URL = import.meta.env.VITE_API_URL || "https://cuims-backend.onrender.com";
-const API_URL = import.meta.env.VITE_BACKEND_URL || "https://cuu-1.onrender.com";
-const BACKEND_URL = "http://localhost:5050";
+// 🛠️ API URL FIX: Vite environment variable use karein ya default Render URL
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "https://cuu-1.onrender.com";
 const API_BASE_URL = `${BACKEND_URL}/api/admin`;
 const CU_RED = '#e31e24';
 
-// UPDATED: Added onLogout prop to the component
 function AdminDashboard({ onLogout }) {
-  const navigate = useNavigate(); // Navigation initialize karein
+  const navigate = useNavigate();
   const [students, setStudents] = useState([]);
   const [selectedBatch, setSelectedBatch] = useState('24'); 
   const [selectedSection, setSelectedSection] = useState('2'); 
@@ -40,6 +34,7 @@ function AdminDashboard({ onLogout }) {
 
   const currentFullSectionTag = `${selectedBatch}BCA-${selectedSection}-${selectedGroup}`;
 
+  // 🛠️ FETCH LOGIC: Hardcoded localhost ko hatakar dynamic URL set kiya
   const fetchStudents = useCallback(async () => {
     setLoading(true);
     setStudents([]); 
@@ -53,7 +48,8 @@ function AdminDashboard({ onLogout }) {
       });
       setStudents(res.data);
     } catch (err) {
-      setSnackbar({ open: true, message: 'Registry Sync Failed', severity: 'error' });
+      console.error("Fetch Error:", err);
+      setSnackbar({ open: true, message: 'Registry Sync Failed. Check Backend Connection.', severity: 'error' });
     } finally {
       setLoading(false);
     }
@@ -96,6 +92,7 @@ function AdminDashboard({ onLogout }) {
   const handleManualRegister = async (e) => {
     e.preventDefault();
     if (!studentForm.image) return setSnackbar({ open: true, message: 'Reference photo is mandatory', severity: 'warning' });
+    
     setLoading(true);
     const data = new FormData();
     data.append('name', studentForm.name);
@@ -132,6 +129,7 @@ function AdminDashboard({ onLogout }) {
 
   return (
     <Container maxWidth="xl" sx={{ mt: 4, mb: 4 }}>
+      {/* Header Section */}
       <Paper elevation={0} sx={{ p: 3, mb: 4, borderLeft: `10px solid ${CU_RED}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', bgcolor: '#fff', borderRadius: 2 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
           <Avatar 
@@ -149,7 +147,6 @@ function AdminDashboard({ onLogout }) {
             <Button variant="contained" component="label" startIcon={bulkLoading ? <CircularProgress size={20} color="inherit" /> : <UploadFile />} sx={{ bgcolor: '#1976d2' }}>
                 Bulk Sync <input type="file" hidden multiple />
             </Button>
-            {/* FIXED: Linked button to onLogout prop for automatic state reset */}
             <Button 
                 variant="contained" 
                 color="error" 
@@ -162,6 +159,7 @@ function AdminDashboard({ onLogout }) {
         </Stack>
       </Paper>
 
+      {/* Stats and Controls */}
       <Grid container spacing={3} sx={{ mb: 4 }}>
          <Grid item xs={12} md={8}>
             <Paper elevation={2} sx={{ p: 3, borderRadius: 4, bgcolor: '#f8f9fa', height: '100%' }}>
@@ -205,10 +203,11 @@ function AdminDashboard({ onLogout }) {
       </Grid>
 
       <Grid container spacing={4}>
+        {/* Enrollment Form */}
         <Grid item xs={12} md={4}>
           <Paper elevation={6} sx={{ p: 3, borderRadius: 5, border: `2px solid ${CU_RED}`, minHeight: '580px' }}>
             <Typography variant="h6" fontWeight="800" sx={{ mb: 3, display: 'flex', alignItems: 'center', gap: 1 }}>
-               <PersonAdd color="error" /> Enroll Student
+                <PersonAdd color="error" /> Enroll Student
             </Typography>
             <form onSubmit={handleManualRegister}>
               <Box sx={{ textAlign: 'center', mb: 4 }}>
@@ -240,6 +239,7 @@ function AdminDashboard({ onLogout }) {
           </Paper>
         </Grid>
 
+        {/* Registry Table */}
         <Grid item xs={12} md={8}>
           <Paper elevation={4} sx={{ p: 3, borderRadius: 5, bgcolor: '#fff', height: '620px', display: 'flex', flexDirection: 'column' }}>
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
@@ -254,7 +254,7 @@ function AdminDashboard({ onLogout }) {
               />
             </Box>
 
-            <Box sx={{ flexGrow: 1, overflowY: 'auto', pr: 1, '&::-webkit-scrollbar': { width: '8px' }, '&::-webkit-scrollbar-thumb': { bgcolor: '#ddd', borderRadius: '4px' } }}>
+            <Box sx={{ flexGrow: 1, overflowY: 'auto', pr: 1 }}>
               {loading ? (
                 <Box sx={{ display: 'flex', justifyContent: 'center', mt: 10 }}><CircularProgress color="error" /></Box>
               ) : (
@@ -271,6 +271,7 @@ function AdminDashboard({ onLogout }) {
                       <TableRow key={s.uid} hover>
                         <TableCell>
                           <Stack direction="row" spacing={2} alignItems="center">
+                            {/* 🛠️ IMAGE PATH FIX: Hardcoded localhost ko hataya */}
                             <Avatar src={`${BACKEND_URL}${s.profile_pic}`} sx={{ width: 45, height: 45, border: '1px solid #eee' }} />
                             <Box>
                               <Typography variant="subtitle2" fontWeight="700">{s.name}</Typography>
@@ -297,7 +298,7 @@ function AdminDashboard({ onLogout }) {
               {!loading && filteredList.length === 0 && (
                  <Box sx={{ textAlign: 'center', py: 15 }}>
                     <ErrorOutline sx={{ fontSize: 60, color: '#eee', mb: 2 }} />
-                    <Typography variant="h6" color="textSecondary">No records in {currentFullSectionTag}</Typography>
+                    <Typography variant="h6" color="textSecondary">No records found</Typography>
                  </Box>
               )}
             </Box>
