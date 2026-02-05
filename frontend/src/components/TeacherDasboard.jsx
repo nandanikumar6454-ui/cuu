@@ -51,7 +51,7 @@ const debounce = (func, wait) => {
   };
 };
 
-function TeacherDashboard() {
+function TeacherDashboard({ onLogout }) { // Add onLogout prop
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('mark'); 
   const [data, setData] = useState([]);
@@ -120,17 +120,28 @@ function TeacherDashboard() {
     return () => clearInterval(cleanupInterval);
   }, []);
 
-  // Logout Logic
-const handleLogout = () => {
-  if (onLogout) {
-    onLogout(); 
-  } else {
-    // Fallback 
-    localStorage.clear();
+  // Logout Logic - Fixed
+  const handleLogout = () => {
+    console.log("Logout triggered");
+    
+    // Stop face detection
+    if (requestRef.current) {
+      cancelAnimationFrame(requestRef.current);
+    }
+    
+    // Clear local storage
+    localStorage.removeItem('teacherToken');
+    localStorage.removeItem('teacherData');
     sessionStorage.clear();
-    navigate('/');
-  }
-};
+    
+    // Call parent logout handler if provided
+    if (onLogout && typeof onLogout === 'function') {
+      onLogout();
+    } else {
+      // Default logout behavior
+      navigate('/login');
+    }
+  };
 
   const dateLimits = useMemo(() => {
     const today = new Date();
@@ -174,8 +185,8 @@ const handleLogout = () => {
         msg: 'AI initialization failed. Face recognition will not work.',
         type: 'error'
       });
-      setModelsLoaded(true);
-      setAiInitialized(true);
+      setModelsLoaded(false);
+      setAiInitialized(false);
     }
   };
 
@@ -183,7 +194,12 @@ const handleLogout = () => {
   const loadDescriptors = useCallback(async () => {
     try {
       console.log('🔄 Fetching student descriptors...');
-      const res = await axios.get(`${BACKEND_URL}/api/admin/all-descriptors`);
+      const res = await axios.get(`${BACKEND_URL}/api/admin/all-descriptors`, {
+        timeout: 10000, // Add timeout
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      });
       console.log(`📊 Received ${res.data.length} descriptor(s) from server`);
       
       const validDescriptors = res.data
@@ -218,6 +234,11 @@ const handleLogout = () => {
       
     } catch (err) {
       console.error('Failed to load descriptors:', err);
+      setAlertInfo({
+        show: true,
+        msg: 'Failed to load student data. Please check backend connection.',
+        type: 'error'
+      });
     }
   }, []);
 
@@ -485,6 +506,11 @@ const handleLogout = () => {
           subject: selectedSubject,
           slot: selectedSlot,
           status: 'PRESENT'
+        }, {
+          timeout: 5000,
+          headers: {
+            'Content-Type': 'application/json'
+          }
         });
         
         if (res.data.success) {
@@ -502,6 +528,11 @@ const handleLogout = () => {
         }
       } catch (error) {
         console.error(`❌ Failed to auto-mark attendance for ${uid}:`, error);
+        setAlertInfo({
+          show: true,
+          msg: `Failed to mark attendance for ${name}`,
+          type: 'error'
+        });
       }
     }, 500),
     [selectedDate, selectedSubject, selectedSlot, detectionActive]
@@ -556,6 +587,10 @@ const handleLogout = () => {
           slot: selectedSlot,
           date: selectedDate,
           _t: Date.now()
+        },
+        timeout: 10000,
+        headers: {
+          'Content-Type': 'application/json'
         }
       });
       
@@ -574,6 +609,11 @@ const handleLogout = () => {
       
     } catch (err) {
       console.error("Fetch Error:", err);
+      setAlertInfo({
+        show: true,
+        msg: 'Failed to fetch data. Please check backend connection.',
+        type: 'error'
+      });
     } finally {
       setLoading(false);
     }
@@ -598,6 +638,11 @@ const handleLogout = () => {
           subject: selectedSubject,
           slot: selectedSlot,
           status: newStatus
+        }, {
+          timeout: 5000,
+          headers: {
+            'Content-Type': 'application/json'
+          }
         });
         
         if (res.data.success) {
@@ -662,7 +707,12 @@ const handleLogout = () => {
         formData.append('slot', selectedSlot);
         formData.append('date', selectedDate);
         
-        const res = await axios.post(`${BACKEND_URL}/api/attendance/group-recognition`, formData);
+        const res = await axios.post(`${BACKEND_URL}/api/attendance/group-recognition`, formData, {
+          timeout: 15000,
+          headers: {
+            'Content-Type': 'multipart/form-data'
+          }
+        });
         
         if (res.data.success) {
           const recognized = res.data.recognized || res.data.count || 0;
@@ -681,7 +731,7 @@ const handleLogout = () => {
         console.error('Group scan error:', err);
         setAlertInfo({
           show: true,
-          msg: err.response?.data?.message || 'Failed to process image.',
+          msg: err.response?.data?.message || 'Failed to process image. Check backend connection.',
           type: 'error'
         });
       } finally {
@@ -1165,8 +1215,6 @@ const handleLogout = () => {
                     {isProcessingPhoto ? <CircularProgress size={24} /> : `UPLOAD PHOTO`}
                   </Button>
                 </Box>
-                
-               
               </Paper>
             </Grid>
             
